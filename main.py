@@ -139,7 +139,7 @@ class SpriteManager:
 class Game:
     def __init__(self) -> None:
         pygame.init()
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption('Tamagotchi')
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(None, 24)

@@ -18,6 +18,8 @@ FPS = 30
 SAVE_PATH = Path('/home/pi/tamagotchi/save.json')
 AUTOSAVE_MS = 60_000
 SPRITES_DIR = Path('sprites')
+IDLE_FRAME_MS = 1400
+ACTION_FRAME_MS = (900, 1300)
 
 PHASES = {
     'baby': range(1, 5),
@@ -150,9 +152,11 @@ class Game:
         self.running = True
         self.current_action = 'idle'
         self.frame_index = 0
-        self.next_frame_change_ms = pygame.time.get_ticks() + 1000
+        self.next_frame_change_ms = pygame.time.get_ticks() + IDLE_FRAME_MS
         self.locked = False
         self.last_autosave_ms = pygame.time.get_ticks()
+        self.status_message = ''
+        self.status_message_until_ms = 0
 
         self.buttons = {
             'FEED': pygame.Rect(10, 420, 95, 45),
@@ -162,6 +166,12 @@ class Game:
         self.power_button = pygame.Rect(255, 8, 58, 24)
 
     def handle_action(self, action: str) -> None:
+        if self.state.energy <= 0:
+            logger.info('Action %s ignored: energy is depleted', action)
+            self.status_message = 'No energy! Actions are locked.'
+            self.status_message_until_ms = pygame.time.get_ticks() + 2000
+            return
+
         if action == 'FEED':
             self.state.hunger = clamp(self.state.hunger + 20)
             self.state.xp += 10
@@ -184,7 +194,7 @@ class Game:
         self.locked = True
         self.current_action = action
         self.frame_index = 0
-        self.next_frame_change_ms = pygame.time.get_ticks() + random.randint(300, 500)
+        self.next_frame_change_ms = pygame.time.get_ticks() + random.randint(*ACTION_FRAME_MS)
 
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type == pygame.QUIT:
@@ -209,20 +219,23 @@ class Game:
         if self.current_action == 'idle':
             if now >= self.next_frame_change_ms:
                 self.frame_index = 1 - self.frame_index
-                self.next_frame_change_ms = now + 1000
+                self.next_frame_change_ms = now + IDLE_FRAME_MS
         elif now >= self.next_frame_change_ms:
             if self.frame_index == 0:
                 self.frame_index = 1
-                self.next_frame_change_ms = now + random.randint(300, 500)
+                self.next_frame_change_ms = now + random.randint(*ACTION_FRAME_MS)
             else:
                 self.current_action = 'idle'
                 self.frame_index = 0
-                self.next_frame_change_ms = now + 1000
+                self.next_frame_change_ms = now + IDLE_FRAME_MS
                 self.locked = False
 
         if now - self.last_autosave_ms >= AUTOSAVE_MS:
             robust_save(self.state)
             self.last_autosave_ms = now
+
+        if now >= self.status_message_until_ms:
+            self.status_message = ''
 
     def draw_bar(self, label: str, value: int, top: int) -> None:
         label_surface = self.small_font.render(f'{label}: {value}%', True, (240, 240, 240))
@@ -252,10 +265,24 @@ class Game:
         self.draw_bar('Happiness', self.state.happiness, 262)
         self.draw_bar('Energy', self.state.energy, 294)
 
+        if self.state.energy <= 0:
+            warning_box = pygame.Rect(12, 324, 296, 34)
+            pygame.draw.rect(self.screen, (120, 25, 25), warning_box, border_radius=6)
+            pygame.draw.rect(self.screen, (255, 160, 160), warning_box, 2, border_radius=6)
+            exhausted = self.small_font.render('OUT OF ENERGY - ACTIONS LOCKED', True, (255, 220, 220))
+            self.screen.blit(exhausted, exhausted.get_rect(center=warning_box.center))
+
+        if self.status_message:
+            msg = self.small_font.render(self.status_message, True, (255, 230, 150))
+            self.screen.blit(msg, (20, 364))
+
+        actions_disabled = self.state.energy <= 0
         for name, rect in self.buttons.items():
-            pygame.draw.rect(self.screen, (60, 80, 150), rect, border_radius=6)
+            button_color = (75, 75, 75) if actions_disabled else (60, 80, 150)
+            text_color = (170, 170, 170) if actions_disabled else (255, 255, 255)
+            pygame.draw.rect(self.screen, button_color, rect, border_radius=6)
             pygame.draw.rect(self.screen, (220, 220, 220), rect, 2, border_radius=6)
-            txt = self.font.render(name, True, (255, 255, 255))
+            txt = self.font.render(name, True, text_color)
             self.screen.blit(txt, txt.get_rect(center=rect.center))
 
         pygame.draw.rect(self.screen, (120, 40, 40), self.power_button, border_radius=5)

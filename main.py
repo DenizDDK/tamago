@@ -74,6 +74,8 @@ class Game:
         self.next_frame_change_ms = pygame.time.get_ticks() + IDLE_FRAME_MS
         self.locked = False
         self.last_autosave_ms = pygame.time.get_ticks()
+        self.status_message = ''
+        self.status_message_until_ms = 0
 
         self.buttons = {
             'FEED': pygame.Rect(10, 420, 95, 45),
@@ -148,6 +150,9 @@ class Game:
         if now - self.last_autosave_ms >= AUTOSAVE_MS:
             robust_save(self.state)
             self.last_autosave_ms = now
+
+        if now >= self.status_message_until_ms:
+            self.status_message = ''
 
     def draw_bar(self, label: str, value: int, top: int) -> None:
         label_surface = self.small_font.render(f'{label}: {value}%', True, (240, 240, 240))

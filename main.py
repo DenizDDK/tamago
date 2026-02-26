@@ -45,88 +45,7 @@ class GameState:
     age_days: int = 0
 
     @property
-    def current_phase(self) -> str:
-        for phase, levels in PHASES.items():
-            if self.level in levels:
-                return phase
-        return 'adult'
-
-
-def clamp(value: int, low: int = 0, high: int = 100) -> int:
-    return max(low, min(high, value))
-
-
-def xp_needed(level: int) -> int:
-    return level * 50
-
-
-def apply_leveling(state: GameState) -> None:
-    while state.level < 20 and state.xp >= xp_needed(state.level):
-        state.xp -= xp_needed(state.level)
-        state.level += 1
-        logger.info('Level up! Now level %s (%s)', state.level, state.current_phase)
-
-
-def robust_save(state: GameState) -> None:
-    SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = SAVE_PATH.with_suffix('.tmp')
-    with temp_path.open('w', encoding='utf-8') as f:
-        json.dump(asdict(state), f)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(temp_path, SAVE_PATH)
-
-
-def load_state() -> GameState:
-    if not SAVE_PATH.exists():
-        return GameState()
-    try:
-        with SAVE_PATH.open('r', encoding='utf-8') as f:
-            data = json.load(f)
-        return GameState(**data)
-    except Exception as exc:
-        logger.error('Failed to load save file: %s', exc)
-        return GameState()
-
-
-def color_for_value(value: int) -> tuple[int, int, int]:
-    if value > 66:
-        return (0, 180, 0)
-    if value >= 33:
-        return (30, 120, 255)
-    return (210, 40, 40)
-
-
-class SpriteManager:
-    ACTIONS = ['idle', 'feed', 'play', 'cuddle']
-
-    def __init__(self) -> None:
-        self.cache: dict[str, dict[str, list[pygame.Surface]]] = {}
-
-    def _load_image(self, path: Path) -> pygame.Surface:
-        if path.exists():
-            try:
-                image = pygame.image.load(path.as_posix()).convert_alpha()
-                return pygame.transform.smoothscale(image, (SPRITE_SIZE, SPRITE_SIZE))
-            except Exception as exc:
-                logger.error('Error loading sprite %s: %s', path, exc)
-        else:
-            logger.warning('Missing sprite file: %s', path)
-
-        surf = pygame.Surface((SPRITE_SIZE, SPRITE_SIZE))
-        surf.fill((60, 60, 60))
-        pygame.draw.rect(surf, (255, 0, 0), surf.get_rect(), 3)
-        font = pygame.font.SysFont(None, 20)
-        txt = font.render('MISSING', True, (255, 255, 255))
-        surf.blit(txt, txt.get_rect(center=surf.get_rect().center))
-        return surf
-
-    def load_phase(self, phase: str) -> None:
-        if phase in self.cache:
-            return
-        phase_dir = SPRITES_DIR / phase
-        frames: dict[str, list[pygame.Surface]] = {}
-        for action in self.ACTIONS:
+@@ -128,156 +130,170 @@ class SpriteManager:
             frames[action] = []
             for idx in (1, 2):
                 img = self._load_image(phase_dir / f'{action}_{idx}.png')
@@ -168,8 +87,6 @@ class Game:
     def handle_action(self, action: str) -> None:
         if self.state.energy <= 0:
             logger.info('Action %s ignored: energy is depleted', action)
-            self.status_message = 'No energy! Actions are locked.'
-            self.status_message_until_ms = pygame.time.get_ticks() + 2000
             return
 
         if action == 'FEED':
@@ -272,10 +189,6 @@ class Game:
             exhausted = self.small_font.render('OUT OF ENERGY - ACTIONS LOCKED', True, (255, 220, 220))
             self.screen.blit(exhausted, exhausted.get_rect(center=warning_box.center))
 
-        if self.status_message:
-            msg = self.small_font.render(self.status_message, True, (255, 230, 150))
-            self.screen.blit(msg, (20, 364))
-
         actions_disabled = self.state.energy <= 0
         for name, rect in self.buttons.items():
             button_color = (75, 75, 75) if actions_disabled else (60, 80, 150)
@@ -308,27 +221,3 @@ class Game:
 
     def close(self) -> None:
         try:
-            robust_save(self.state)
-        except Exception as exc:
-            logger.error('Save on exit failed: %s', exc)
-        pygame.quit()
-
-
-def main() -> None:
-    game = Game()
-
-    def _signal_handler(signum, _frame):
-        logger.info('Received signal %s; exiting gracefully', signum)
-        game.running = False
-
-    signal.signal(signal.SIGINT, _signal_handler)
-    signal.signal(signal.SIGTERM, _signal_handler)
-
-    try:
-        game.run()
-    finally:
-        game.close()
-
-
-if __name__ == '__main__':
-    main()
